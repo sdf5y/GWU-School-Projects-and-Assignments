@@ -1,0 +1,696 @@
+---
+title: "Project 1 - Household Energy Expenditures - Electricity"
+author: "Sean Franco, Mei Fei Hung, Daniel Felberg"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: hide
+    number_sections: false
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+---
+
+```{r init, include=F}
+#setwd() Meng Fei's WD  
+setwd("C:/Users/18045/Documents/R/Data_Intro_Class/Project1")# Sean's WD
+#setwd("C:/Users/danif/OneDrive/Documents/GWU - Data Science (Spring 2023)/DATS 6101/Project/Project1.R") Daniel's WD
+library(readr)
+library(ggplot2)
+#install.packages("survey","ggmap","maps","mapdata","formattable", "forcats", "RColorBrewer","gridExtra", "usmap", "xtable", "glmnet", "boot", Metrics","ggfortify","cowplots","rattle", "fancyRpartPlot")
+library(survey)
+library(dplyr)
+library(ggmap)
+library(maps)
+library(mapdata)
+library(usmap)
+library(formattable)
+library(forcats)
+library(RColorBrewer)
+library(ezids)
+library(readxl)
+library(gridExtra)
+library(lattice)
+library(corrplot)
+library(reshape2)
+library(xtable)
+library(car)
+library(glmnet)
+library(Metrics)
+library(boot)
+library(ggfortify)
+library(cowplot)
+#install.packages("ISLR", "tree", "rpart", "rpart.plot")
+library(tree, rpart)
+
+```
+
+
+```{r setup, include=FALSE}
+# Some of common RMD options (and the defaults) are: 
+# include=T, eval=T, echo=T, results='hide'/'asis'/'markup',..., collapse=F, warning=T, message=T, error=T, cache=T, fig.width=6, fig.height=4, fig.dim=c(6,4) #inches, fig.align='left'/'center','right', 
+knitr::opts_chunk$set(warning = F, message = F)
+# Can globally set option for number display format.
+options(scientific=T, digits = 3) 
+# options(scipen=9, digits = 3) 
+```
+
+Introduction:
+This study examines the impact of household energy expenditure reported during the year 2015 from data from the Energy Information Administration. The study attempts to conduct exploratory data analysis (EDA) related to yearly household energy consumption, the expenditures of energy related to climate region, census income levels, and appliance types. The dataset for this project is from the 2015 survey from the Energy Information Administration which is the 14th edition of this national household survey. The year 2015 was chosen because it was before the coronavirus, and that it was after the 2008 financial crisis. Additionally, this survey is randomly sampled, and the most complete version of the survey with all amendments. 
+
+Methods:
+	For the most part, the attributes were pulled from the existing EIA survey data, and examined for normality. If heteroskedasticity was present, then leverage point outliers were removed to manipulate the data to normalize it. This could be a large assumption, but our rationale was that many of these outliers were not representative of the majority of the data points for the country. For example, a large outlier for total yearly electricity expenditure is likely to be from a very wealthy individual, let’s say the household for Jeff Bezos and family who can afford high prices for electricity, rather than any given working class family household. Almost all our variables needed 
+
+
+```{r}
+#LoadData ----- 
+
+RECS2015 <- read.csv("recs2015_public_v4.csv", header=TRUE, sep=",")
+
+app_cost <- data.frame(RECS2015$DOLELSPH,
+                       RECS2015$DOLELCOL,
+                       RECS2015$DOLELWTH,
+                       RECS2015$DOLELRFG,
+                       RECS2015$DOLELFRZ,
+                       RECS2015$DOLELCOK,
+                       RECS2015$DOLELMICRO,
+                       RECS2015$DOLELCW,
+                       RECS2015$DOLELCDR,
+                       RECS2015$DOLELDWH,
+                       RECS2015$DOLELLGT,
+                       RECS2015$DOLELTVREL,
+                       RECS2015$DOLELCFAN)
+
+colnames(app_cost) <- c(
+  "Spaceheating", 
+  "AC", 
+  "Waterheating",
+  "Refrigerator", 
+  "Freezer",
+  "Cooking", 
+  "Microwave",
+  "Clothewasher", 
+  "Clothedryer",
+  "Dishwasher",
+  "Light", 
+  "TV",
+  "Fans")
+
+app_cost <- outlierKD2(app_cost, (Spaceheating), rm =TRUE)
+app_cost <- outlierKD2(app_cost, (AC), rm =TRUE) 
+app_cost <- outlierKD2(app_cost, (Waterheating), rm =TRUE)
+app_cost <- outlierKD2(app_cost, (Light), rm =TRUE)
+app_cost <- outlierKD2(app_cost, (TV), rm =TRUE)  
+app_cost <- outlierKD2(app_cost, (Dishwasher), rm =TRUE)
+app_cost <- outlierKD2(app_cost, (Refrigerator), rm =TRUE)
+app_cost <- outlierKD2(app_cost, (Freezer), rm =TRUE)
+app_cost <- outlierKD2(app_cost, (Cooking), rm =TRUE)
+app_cost <- outlierKD2(app_cost, (Microwave), rm =TRUE)
+app_cost <- outlierKD2(app_cost, (Clothewasher), rm =TRUE)
+app_cost <- outlierKD2(app_cost, (Clothedryer), rm =TRUE)
+app_cost <- outlierKD2(app_cost, (Fans), rm =TRUE)
+
+app_cost <- app_cost[-ncol(app_cost)]
+
+app_cost["series"] <- rep(1, nrow(app_cost))
+
+test <- melt(app_cost,  id.vars = 'series', variable.name = 'index')
+
+test %>%
+  arrange(index)%>%
+  mutate(index = factor(index, levels = c("series",
+                                          "Waterheating",
+                                          "AC",
+                                          "Spaceheating", 
+                                          "Light",
+                                          "TV",
+                                          "Refrigerator",
+                                          "Clothedryer",
+                                          "Fans",
+                                          "Freezer",
+                                          "Cooking", 
+                                          "Microwave", 
+                                          "Dishwasher",
+                                          "Clothewasher"
+                                          ))) %>%
+  ggplot(
+    aes(x = series,
+        y = value,
+        fill = index))+ 
+  geom_bar(stat = "identity", 
+           position = "dodge") +
+  labs(title = "Annual Electricity Cost of Different Appliances", 
+       x = "Appliances",
+       y = "Annual Electricity Cost")+  
+  theme(axis.text.x = element_blank())
+```
+See above is a plot of common appliances and their total yearly electricity usage. We can notice that waterheating, spaceheating and air conditioning, are among the top appliances that consume electricity. Examining central air costs for heating and cooling are among the top energy expenses for households. 
+
+```{r}
+#Electricity costs for space heating (“DOLELSPH” variable),
+
+RECS2015$DOLELSPH <- currency(RECS2015$DOLELSPH,
+                              symbol = "$",
+                              digits = 2L,
+                              format = "f",
+                              big.mark = ",",
+                              sep = "")
+
+#Electricity costs for air conditioning (“DOLELCOL” variable),
+
+RECS2015$DOLELCOL <- currency(RECS2015$DOLELCOL,
+                              symbol = "$",
+                              digits = 2L,
+                              format = "f",
+                              big.mark = ",",
+                              sep = "")
+
+#Natural Gas costs (“DOLLERNG” variable),
+
+RECS2015$DOLLARNG <- currency(RECS2015$DOLLARNG,
+                              symbol = "$",
+                              digits = 2L,
+                              format = "f",
+                              big.mark = ",",
+                              sep = "")
+
+#Natural Gas costs (“DOLLARFO” variable),
+
+RECS2015$DOLLARFO <- currency(RECS2015$DOLLARFO,
+                              symbol = "$",
+                              digits = 2L,
+                              format = "f",
+                              big.mark = ",",
+                              sep = "")
+
+#Heat Pump dataframe 
+RECS2015 <- RECS2015 %>% 
+  mutate(CENACHP = as.factor(case_when(CENACHP == 1 ~ "Has a Heat Pump",
+                                       CENACHP == 0 ~ "No Heat Pump",
+                                       CENACHP == -2 ~ "NA")))
+
+RECS2015 <- RECS2015 %>%
+  mutate(MONEYPY = as.factor(case_when(MONEYPY == 1 ~ "Less than $20,000",
+                                       MONEYPY == 2 ~ "$20,000 - $39,999",
+                                       MONEYPY == 3 ~ "$40,000 - $59,999",
+                                       MONEYPY == 4 ~ "$60,000 to $79,999",
+                                       MONEYPY == 5 ~ "$80,000 to $99,999",
+                                       MONEYPY == 6 ~ "$100,000 to $119,999",
+                                       MONEYPY == 7 ~ "$120,000 to $139,999",
+                                       MONEYPY == 8 ~ "$140,000 or more")))
+
+RECS2015 <- RECS2015 %>%
+  mutate(EDUCATION = as.factor(case_when(EDUCATION == 1 ~ "Less than high school diploma or GED",
+                                         EDUCATION == 2 ~ "High school diploma or GED",
+                                         EDUCATION == 3 ~ "Some college or Associate’s degree",
+                                         EDUCATION == 4 ~ "Bachelor’s degree",
+                                         EDUCATION == 5 ~ "Grad Plus degree")))
+
+RECS2015 <- RECS2015 %>%
+  mutate(YEARMADERANGE = as.factor(case_when(YEARMADERANGE == 1 ~ "Before 1950",
+                                             YEARMADERANGE == 2 ~ "1950 to 1959",
+                                             YEARMADERANGE == 3 ~ "1960 to 1969",
+                                             YEARMADERANGE == 4 ~ "1970 to 1979",
+                                             YEARMADERANGE == 5 ~ "1980 to 1989",
+                                             YEARMADERANGE == 6 ~ "1990 to 1999",
+                                             YEARMADERANGE == 7 ~ "2000 to 2009",
+                                             YEARMADERANGE == 8 ~ "2010 to 2015")))
+
+RECS2015 <- RECS2015 %>%
+  mutate(EQUIPM = as.factor(case_when(EQUIPM == 2 ~ "Steam/hot water system with radiators or pipes",
+                                      EQUIPM == 3 ~ "Central furnace",
+                                      EQUIPM == 4 ~ "Heat pump",
+                                      EQUIPM == 5 ~ "Built-in electric units installed in walls, ceilings, baseboards, or floors",
+                                      EQUIPM == 6 ~ "Built-in floor/wall pipeless furnace",
+                                      EQUIPM == 7 ~ "Built-in room heater burning gas, oil, or kerosene",
+                                      EQUIPM == 8 ~ "Wood-burning stove (cordwood or pellets)",
+                                      EQUIPM == 9 ~ "Fireplace",
+                                      EQUIPM == 10 ~ "Portable electric heaters",
+                                      EQUIPM == 21 ~ "Some other equipment",
+                                      EQUIPM == -2 ~ NA)))
+```
+
+```{r}
+central_air_df <- data.frame(RECS2015$DOLELSPH, 
+                             RECS2015$DOLELCOL, 
+                             RECS2015$CENACHP)
+
+colnames(central_air_df) <- c("Electricity Space Heating Costs", 
+                              "Electricity AC Costs", 
+                              "Heat Pump Status")
+
+#dataframe prep for combo plot
+i <- 1
+newdf <- 0
+for(i in 2:2){
+  
+  newdf["Electricity Costs in $"] <- rbind(as_tibble(central_air_df[,1]), as_tibble(central_air_df[,i]))
+  
+}
+newdf <- as.data.frame(newdf)
+newdf["Heat Pump Status"] <- rep(central_air_df$`Heat Pump Status`, 2) 
+newdf["Group"] <- rbind(as_tibble(rep("Heating", nrow(central_air_df))), 
+                        as_tibble(rep("Cooling", nrow(central_air_df)))) 
+
+newdf <- newdf[-1]
+colnames(newdf) <- c("Electricity Costs in $", "Heat Pump Status", "Group")
+
+group.colors <- c("Heating" = "Orange", "Cooling" = "Light Blue")
+
+ggplot(newdf,
+       aes(x = `Heat Pump Status`,
+           y = `Electricity Costs in $`,
+           fill = `Group`))+
+  geom_col(stat = "identity", position = "dodge")+
+  labs(title = "Yearly Central Air Costs (in $)")+
+  scale_fill_manual(values=group.colors)
+```
+
+This plot shows heating and cooling costs for households with heat pumps and without heatpumps. Households with heatpumps roughly save half of their heating costs than households without heat pumps. A T-test (see below) indicated that the difference between households with heatpumps is significant for total, yearly heating costs.
+
+Cooling costs for households with heat pumps save almost $500 a year (in total cooling costs) compared to households without heat pumps. A T-test (see below) indicated that the difference between households with heatpumps is significant for total, yearly AC costs.
+
+```{r}
+#T-Test for heatpumps v. spaceheater----
+
+ttest_central_air_df <- central_air_df %>%
+  mutate(`alt` = central_air_df$`Heat Pump Status` == "Has a Heat Pump",
+         'null' = central_air_df$`Heat Pump Status` == "No Heat Pump")
+
+no_hp <- ttest_central_air_df %>%
+  filter(null == TRUE)
+    
+has_hp <- ttest_central_air_df %>%
+  filter(alt == TRUE)
+
+t.test(x = has_hp$`Electricity Space Heating Costs`,
+       conf.level = 0.95,
+       mu = mean(no_hp$`Electricity Space Heating Costs`))
+
+#T-Test for heatpumps v. AC-----
+
+no_hp <- ttest_central_air_df %>%
+  filter(null == TRUE)
+
+has_hp <- ttest_central_air_df %>%
+  filter(alt == TRUE)
+
+t.test(x = has_hp$`Electricity AC Costs`,
+       conf.level = 0.95,
+       mu = mean(no_hp$`Electricity AC Costs`))
+
+```
+
+```{r}
+#----------------------Income and Energy Expenditure info----------------------- ------
+#Annual gross household income for the last year (“MONEYPY” variable),
+
+central_air_df["Income"] <- data.frame(RECS2015$MONEYPY)
+
+has_hp <- central_air_df %>%
+  filter(`Heat Pump Status` == "Has a Heat Pump")
+
+no_hp <- central_air_df %>%
+  filter(`Heat Pump Status` == "No Heat Pump")
+
+central_air_df %>%
+  arrange(`Heat Pump Status`) %>%
+  mutate(Income = factor(Income, levels = c("Less than $20,000",
+                                            "$20,000 - $39,999",
+                                            "$40,000 - $59,999",
+                                            "$60,000 to $79,999",
+                                            "$80,000 to $99,999",
+                                            "$100,000 to $119,999",
+                                            "$120,000 to $139,999",
+                                            "$140,000 or more")))%>%
+  ggplot(aes(x = Income,
+             y = `Heat Pump Status`,
+             fill = `Heat Pump Status`))+
+  geom_bar(stat = "identity")+
+  labs(title = "Income Bracket And Heat Pump Status",
+       ylab = "")+
+  theme(axis.text.x = element_text(angle = 45, size = 9, margin = margin(r=0)),
+        axis.text.y=element_blank()) 
+
+```
+
+See above is a bar plot of Heat pump status as binary counts based on household income brakets. Based on ocular scrutiny, higher income brackets report larger ratios of having heatpumps. The $20k - $39k income bracket have the highest counts of not having heatpumps, and having heat pumps. The $40k - $59k; $140k to more income brackets have high ratios of having heat pumps. 
+
+```{r}
+
+#BOXPLOT of income and yearly energy costs----
+central_air_df["TotElectricity"] <- RECS2015$DOLLAREL
+
+central_air_df <- outlierKD2(central_air_df, TotElectricity, rm= TRUE)
+
+#PLOT income by total electricity usage-----
+central_air_df %>%
+  arrange(`Heat Pump Status`) %>%
+  mutate(Income = factor(Income, levels = c("Less than $20,000",
+                                            "$20,000 - $39,999",
+                                            "$40,000 - $59,999",
+                                            "$60,000 to $79,999",
+                                            "$80,000 to $99,999",
+                                            "$100,000 to $119,999",
+                                            "$120,000 to $139,999",
+                                            "$140,000 or more")))%>%
+  ggplot(aes(x = Income,
+             y = TotElectricity, 
+             color = Income)) + 
+  geom_boxplot(stat = "boxplot") +
+  labs(title = "Yearly Electricity Cost by Income Level ", 
+       x = "Income level",
+       y = "Yearly Electricity Cost (in $)")+  
+  theme(axis.text.x = element_text(angle = 45, size = 9, margin = margin(r=0)), 
+        axis.text.y=element_text())
+```
+
+See above are boxplots of income brackets and total yearly electricity costs. On averge, lower incomes tend to spend less on electricity costs, compared to higher incomes. This is also supported in literature about energy poverty and cultural practices to save energy. see below an ANOVA table of the total electricity related to Income. We observe that higher incomes indeed spend more on electricity than lower incomes.
+
+```{r}
+#ANOVA Test (Income level)----
+anovaInc = aov(TotElectricity ~ Income, data = central_air_df)
+xkabledply(anovaInc, title = "ANOVA result summary")
+
+```
+
+```{r}
+#Spatial Prep------
+
+#Preparing Census Regions 
+
+RECS2015 <- RECS2015 %>%
+  mutate(REGIONC = as.factor(case_when(REGIONC == 1 ~ "Northeast",
+                                       REGIONC == 2 ~ "Midwest",
+                                       REGIONC == 3 ~ "South",
+                                       REGIONC == 4 ~ "West")))
+RECS2015$REGIONC
+plot(RECS2015$REGIONC)
+
+#Preparing Census Divisions
+
+RECS2015 <- RECS2015 %>%
+  mutate(DIVISION = as.factor(case_when(DIVISION == 1 ~ "New England",
+                                       DIVISION == 2 ~ "Middle Atlantic",
+                                       DIVISION == 3 ~ "East North Central",
+                                       DIVISION == 4 ~ "West North Central",
+                                       DIVISION == 5 ~ "South Atlantic",
+                                       DIVISION == 6 ~ "East South Central",
+                                       DIVISION == 7 ~ "West South Central",
+                                       DIVISION == 8 ~ "Mountain North",
+                                       DIVISION == 9 ~ "Mountain South",
+                                       DIVISION == 10 ~ "Pacific",)))
+
+#Electricity cost differences between urban and rural areas (“UATYP10” variable),
+
+#rename levels of area 
+RECS2015 <- RECS2015 %>% 
+  mutate(UATYP10 = as.factor(case_when(UATYP10 == "U" ~ "Urban Area",
+                                       UATYP10 == "R" ~ "Rural",
+                                       UATYP10 == "C" ~ "Urban Cluster")))
+
+#dataframe of area and total energy
+Tot_Energy_area_df <- data.frame(RECS2015$UATYP10, RECS2015$DOLLAREL, RECS2015$DIVISION, RECS2015$CLIMATE_REGION_PUB)
+colnames(Tot_Energy_area_df) <- c("Urban Density", "Yearly Electricity Costs", "Division", "Climate")
+
+#HISTOGRAM and Q-Q Plot before outliers are removed----
+ggplot(data=Tot_Energy_area_df, aes(x = `Yearly Electricity Costs`)) + 
+  geom_histogram(breaks=seq(19, 8122, by = 100), 
+                 col="black", 
+                 fill="dark green", 
+                 alpha = .7) + # opacity
+  labs(x="Electricity Cost", y="Frequency") +
+  labs(title="Histogram of Total Electricity Cost, Using `ggplot`")
+
+qqnorm(Tot_Energy_area_df$`Yearly Electricity Costs`, main = "Q-Q Plot of Total Electricity Cost")
+qqline(Tot_Energy_area_df$`Yearly Electricity Costs`)
+
+### Removing outliers:
+Tot_Energy_area_df <- outlierKD2(Tot_Energy_area_df, `Yearly Electricity Costs`, rm= TRUE)
+
+#HISTOGRAM and Q-Q Plot again after removing outliers----
+
+ggplot(data=Tot_Energy_area_df, aes(x = `Yearly Electricity Costs`)) + 
+  geom_histogram(breaks=seq(19, 8122, by = 100), 
+                 col="black", 
+                 fill="dark green", 
+                 alpha = .7) + # opacity
+  labs(x="Electricity Cost", y="Frequency") +
+  labs(title="Histogram of Total Electricity Cost, Using `ggplot`")
+
+qqnorm(Tot_Energy_area_df$`Yearly Electricity Costs`, main = "Q-Q Plot of Total Electricity Cost")
+qqline(Tot_Energy_area_df$`Yearly Electricity Costs`)
+
+```
+
+```{r}
+
+#PLOT Yearly expenditure differences by Division and Density-----
+Tot_Energy_area_df %>%
+  arrange(`Yearly Electricity Costs`)%>%
+  mutate(Division = factor(Division, levels = c("New England",
+                                                "Middle Atlantic",
+                                                "East North Central",
+                                                "West North Central",
+                                                "South Atlantic",
+                                                "East South Central",
+                                                "West South Central",
+                                                "Mountain North",
+                                                "Mountain South",
+                                                "Pacific")))%>%
+  ggplot(
+    aes(x = `Urban Density`,
+        y = `Yearly Electricity Costs`,
+        fill = fct_reorder(`Division`, `Yearly Electricity Costs`)))+
+  geom_boxplot(stat = "boxplot", 
+               position = "dodge")+
+  labs(title = "Urban Density and Electricity Costs",
+       fill= "Division")+
+  theme(axis.text.x = element_text(size = 9, margin = margin(r=0)), 
+        axis.text.y=element_text())+ 
+  scale_color_brewer(palette = "Pastel2")
+
+```
+
+See above is a boxplot of census divisions and total yearly electricity costs. We can observe that households in rural areas spend more on electricity than Urban or Urban Clusters. We can also observe that urban areas generally have high populations which may explain the more distant outliers. 
+
+See below is an ANOVA table for both ubran density and division variables related to total yearly electricity costs. This suggests that the mean differences between urban density and division variables respective to total yearly electricity costs is influential on total yearly income.
+
+```{r}
+#ANOVA Test (Urban density)----
+
+anovaUrb = aov(`Yearly Electricity Costs` ~ `Urban Density`, data = Tot_Energy_area_df)
+xkabledply(anovaUrb, title = "ANOVA result summary")
+
+anovaDiv = aov(`Yearly Electricity Costs` ~ Division + `Urban Density`, data = Tot_Energy_area_df)
+xkabledply(anovaDiv, title = "ANOVA result summary")
+
+```
+```{r}
+#PLOT Barplots of US Census v. Yearly Electricity Costs, Controlling for Climate----
+level_order <- c("Mountain North", "Mountain South", "New England", "East South Central", "West North Central", "Middle Atlantic", "West South Central", "East North Central", "Pacific", "South Atlantic")
+Tot_Energy_area_df$Division <- factor(Tot_Energy_area_df$Division, levels = level_order)
+
+ggplot(Tot_Energy_area_df, aes(x=Division, 
+                               y=`Yearly Electricity Costs`, 
+                               color=Climate, 
+                               fill = Climate)) +
+  geom_bar(stat = "identity") +
+  labs(x="US Census Division", y="Yearly Electricity Costs", title="Division vs. Electricity Cost, Colored by Climate") +
+   theme(axis.text.x = element_text(angle = 45, size = 9, margin = margin(r=0)), 
+        axis.text.y=element_text())
+
+```
+
+This shows an ANOVA table comparing different regressions of the dependent Y variable, total electricity expenditures, respectively on Division, and Climate type. Overall, it is observed significance at the 5% level for climates that are Hot and Humid, mixed-humid, and hot-dry/mixed dry. This is also shown in our prior graph which shows these climate categories have overall higher averages for total energy costs. It is also observed that the divisions West South Cental, New England, Middle Atlantic, and East South central are significant at the 5% level. This means that these regions have higher total expenditures on heating or cooling, or both. This is also supported visually on our graphs where these divisions report higher averages for total electricity expenditures. 
+
+```{r}
+#REGRESSION - WORK IN PROGRESS PROJECT 2: What are the HP yearly energy costs -----
+
+house_size <- data.frame(RECS2015$CENACHP,RECS2015$DOLLAREL, log(RECS2015$DOLLAREL/RECS2015$TOTSQFT_EN),RECS2015$YEARMADERANGE, RECS2015$TOTSQFT_EN, log(RECS2015$TOTSQFT_EN), RECS2015$DOLELSPH, RECS2015$DOLELCOL, RECS2015$CLIMATE_REGION_PUB, RECS2015$MONEYPY, RECS2015$NHSLDMEM, RECS2015$EDUCATION, RECS2015$DOLLARNG, RECS2015$DOLLARFO, RECS2015$EQUIPM)
+
+colnames(house_size) <- c("Heat Pump", 'Total Electricity', 'Log Total Electricity/sqft',"Year Made Range", "SqFoot", "Log SqFoot", "Heating Cost", "AC Cost","Climate Region", "Income", "Number of Household Members", "Education", "Total Natural Gas Cost", "Total Fuel Oil/Kerosene Costs", "SH_Type")
+
+house_size <- house_size %>%
+  mutate(`Heat Pump` = case_when(`Heat Pump` == "No Heat Pump" ~ '0',
+                                 `Heat Pump` == "Has a Heat Pump" ~ '1',
+                                 `Heat Pump` == "NA" ~ "NA"))
+
+house_size <- subset(house_size, house_size$SH_Type != "Heat pump", drop = FALSE)
+
+house_size <- subset(house_size, !is.na(SH_Type), drop = FALSE)
+
+house_size <- house_size[!grepl("NA", house_size$`Heat Pump`),]
+
+#Regressions
+
+heatpump1 <- lm(`Log Total Electricity/sqft` ~ `SqFoot`+ `Heat Pump` + `Heat Pump`:`Log SqFoot`, data = house_size)
+
+heatpump2 <- lm(`Log Total Electricity/sqft` ~ `SqFoot`+ `Heat Pump` + `Heat Pump`:`Log SqFoot`+`Climate Region`:`Heat Pump` + `Climate Region` + 
+                  `SH_Type`+ `Total Natural Gas Cost` + `Total Fuel Oil/Kerosene Costs` +`Income` + `Education`, data = house_size)
+
+heatpump3 <- lm(`Log Total Electricity/sqft` ~ `SqFoot`+ `Heat Pump` + `Heat Pump`:`Log SqFoot`+`Climate Region`:`Heat Pump` + `Climate Region` + 
+                  `SH_Type`+ `Total Natural Gas Cost` + `Total Fuel Oil/Kerosene Costs`, data = house_size)
+
+heatpump4 <- lm(`Log Total Electricity/sqft` ~ `SqFoot`+ `Heat Pump` + `Heat Pump`:`Log SqFoot`+`Climate Region`:`Heat Pump` +`Climate Region` + 
+                  `SH_Type`+ `Total Natural Gas Cost` + `Total Fuel Oil/Kerosene Costs` +`Income` + `Education`, data = house_size)
+
+xkabledply(anova(heatpump1, heatpump2, heatpump3, heatpump4))
+
+```
+
+See above is an ANOVA table of four different regressions of the change in total energy per squarefootage and heat pump status, while adding controlling for house and household demographic factors. Some sociological controls are income, education since different incomes and educational levels have different yearly electricity costs. Housing and fuel types are controlled in square footage, climate region, and main heating fuel type to isolate the effects of heat pumps. 
+
+```{r}
+
+plot(heatpump4)
+summary(heatpump4)
+vif(heatpump4)
+
+```
+
+See above is a result of the best fitted regression (4th, with all controls). It is also observed that there are generally low Variance Inflation Factors (VIFs) in the regression. The main exception is the dummy variable of heat pump status, but this is expected since dummy variables typically have large VIFs. As observed in the residual plots, the residuals are pretty uniform, which loosely matches the actual data. So, it makes it difficult to determine significance for our variables, especially since some variables interact with each other in a system and may be colinear. This is one possible explanation of why heat pump dummy variable does not have statistical significance at the 5% level.
+
+```{r}
+#Matrix of the predictor variables
+X <- model.matrix(`Log Total Electricity/sqft` ~ `SqFoot`+ `Heat Pump` + `Heat Pump`:`Log SqFoot`+`Climate Region`:`Heat Pump` +
+                    `Climate Region` + `SH_Type`+ `Total Natural Gas Cost` + `Total Fuel Oil/Kerosene Costs` +`Income` + `Education`, data = house_size)
+
+#Response variable
+y <- house_size$`Log Total Electricity/sqft`
+
+#Tuning lambda
+cvfit <- cv.glmnet(X, y, alpha = 0, standardize = TRUE)
+
+#PLOT Lambda ----
+plot(cvfit)
+
+#Optimal value of lambda fit
+fit <- glmnet(X, y, alpha = 0, lambda = cvfit$lambda.min, standardize = TRUE)
+
+coef(fit)
+ty <- as.matrix(fit[[2]])
+ty <- ty[-1]
+
+fit <- glmnet::cv.glmnet(X, y)
+autoplot(fit, colour = 'blue')
+```
+
+To account for colinearity, a ridge regression is used to better estimate the variable coefficients to the model based on a tuning parameter lambda. Introducing bias means that there is no way to calculate the mean squared error terms, but we know that the tuning variable Lambda sets the model at the optimal fit to prevent overfitting, which is the cause of colinearity in the original linear regression. It is found that holding all variables constant, having a heat pump decreases the change in total energy expenditures per square footage by \0.11 Standard Deviations. In more digestible terms, using the prior regression, having a heat pump  decreases total energy expenditures by 1.4% of electricity costs per 1 square footage. 
+
+```{r}
+#REGRESSION Regression of electricity costs controlling for income, urban area type -----
+
+# Adding variables from RECS
+
+Tot_Energy_area_df <- data.frame(RECS2015$UATYP10, RECS2015$DOLLAREL, RECS2015$DIVISION, RECS2015$CLIMATE_REGION_PUB, RECS2015$TOTROOMS, RECS2015$TOTSQFT_EN, RECS2015$MONEYPY)
+colnames(Tot_Energy_area_df) <- c("Urban Density", "Yearly Electricity Costs", "Division", "Climate","Total Rooms", "SqFoot","Income")
+Tot_Energy_area_df <- outlierKD2(Tot_Energy_area_df,`Yearly Electricity Costs` , rm =TRUE)
+
+Tot_Energy_area_df$`Urban Density`<-as.factor(Tot_Energy_area_df$`Urban Density`)
+Tot_Energy_area_df$Division<-as.factor(Tot_Energy_area_df$Division)
+Tot_Energy_area_df$Climate<-as.factor(Tot_Energy_area_df$Climate)
+
+# Preparing Linear Models for climate and census division
+lm.Division <- lm(`Yearly Electricity Costs`~Division, data = Tot_Energy_area_df)
+lm.Climate <- lm(`Yearly Electricity Costs`~Climate, data = Tot_Energy_area_df)
+lm.Division.Climate <- lm(`Yearly Electricity Costs`~Division+Climate, data = Tot_Energy_area_df)
+lm.DivCli.interaction <- lm(`Yearly Electricity Costs`~Division + Climate + Division*Climate, data = Tot_Energy_area_df)
+
+# Tables of LM comparisons, and ANOVA of LMs (Elect cost, climate, census division)
+xkabledply(lm.Division, title = paste("Model (factor): ", format(formula(lm.Division))))
+xkabledply(lm.Climate, title = paste("Model (factor): ", format(formula(lm.Climate))))
+xkabledply(lm.Division.Climate, title = paste("Model (factor): ", format(formula(lm.Division.Climate))))
+xkabledply(lm.DivCli.interaction)
+
+anova.Tot_Area <- anova(lm.Division, lm.Climate, lm.Division.Climate, lm.DivCli.interaction)
+#ANOVA test (which Regression is best) ----
+xkabledply(anova.Tot_Area, title = "ANOVA comparison between the models")
+
+```
+ANOVA regression of Yearly Electricity Costs related to Climate and Division. The last row has the regression with the lowest F-test, and lowest sum of squares error so among the four, so it is the preferred regression.
+
+
+```{r}
+## Linear Models for Income, Urban Density, and Division---
+
+fit1 <- lm(`Yearly Electricity Costs`~Income + `Urban Density`, data =Tot_Energy_area_df)
+fit2 <- lm(`Yearly Electricity Costs`~Income + `Urban Density`+ `Division`, data = Tot_Energy_area_df)
+fit3 <- lm(`Yearly Electricity Costs`~Income + `Urban Density`+ `Division` +`Urban Density`:`Division`, data = Tot_Energy_area_df)
+
+## Multicollinearity test
+xkablevif(fit1)
+xkablevif(fit2)
+xkablevif(fit3)
+
+## Plot for fitted model
+par(mfrow=c(2,2))
+plot(fit1)
+plot(fit2)
+plot(fit3)
+
+#step(fit3)
+
+#library(jtools)
+#library(interactions)
+#interact_plot(fit3, pred = `Urban Density`, modx = `Division`)
+
+## Tables of LM comparisons, and ANOVA of LMs---
+xkabledply(fit1, title = paste("Model 1:", format(formula(fit1)) ))
+xkabledply(fit2, title = paste("Model 2:", format(formula(fit2)) ))
+xkabledply(fit3) 
+
+anovaRes<-anova(fit1,fit2,fit3)
+xkabledply(anovaRes, title = "ANOVA comparison between the models")
+
+```
+
+ANOVA regression of Income related to Urban Density. The last row has the regression with the lowest F-test, and lowest sum of squares error so among the three, so it is the preferred regression.
+
+
+```{r}
+#STEPWISE Regression (Full Model)
+#REGRESSION TREE----
+
+# renaming columns for the formula
+names(Tot_Energy_area_df) <- c("Urban_Density", "Yearly_Electricity_Costs", "Division", "Climate", "Total_Rooms", "SqFoot", "Income")
+
+#tree regressions
+treefit <- tree(log(Yearly_Electricity_Costs) ~ Income + Urban_Density + Division + Climate + Total_Rooms + SqFoot, data = Tot_Energy_area_df)
+summary(treefit)
+plot(treefit)
+text(treefit,cex=0.75)
+
+treefitRpart <- rpart(log(Yearly_Electricity_Costs) ~ Income + Urban_Density + Division + Climate + Total_Rooms +SqFoot, data=Tot_Energy_area_df, control = list(maxdepth = 8, cp=0.009) )
+summary(treefitRpart)
+#fancyRpartPlot(treefitRpart, cex=0.9)
+
+treefitRpart2 <- rpart(log(Yearly_Electricity_Costs) ~ Income + Urban_Density + Division + Climate + Total_Rooms +SqFoot, data=Tot_Energy_area_df)
+summary(treefitRpart2)
+#fancyRpartPlot(treefitRpart2, cex=0.9)
+
+#Stepwise Regression?
+my.tree = tree(Yearly_Electricity_Costs  ~ Income + Urban_Density + Division + Climate + Total_Rooms + SqFoot, data=Tot_Energy_area_df)
+prune.tree(my.tree,best=5)
+my.tree.seq = prune.tree(my.tree)
+plot(my.tree.seq)
+
+deviance1 <- my.tree.seq$dev
+deviance1
+
+# Testing tree regression --> Not working?
+
+predictions <- predict(treefitRpart2)
+mse_values <- summary(treefitRpart2)$MSE
+rmse <- sqrt(mean(mse_values))
+
+predicted_values <- predict(treefitRpart2, Tot_Energy_area_df, type = "vector")
+abs_diff <- abs(Tot_Energy_area_df$Yearly_Electricity_Costs - predicted_values)
+```
+
+Regression Tree of Yearly Electricity costs and influencing factors like Income, Urban Density, Division and Climate. This is helpful for determining predictive factors for the variables. The variables had effects. Square Foot, Total room numbers, Income had positive impacts. People who live in urban have less electricity cost than live in rural.
+
+Additionally Income, Urban Density, Total Rooms, Area, and Climate variables have a significant, positive impact on electricity costs. The Division variable had a mild impact compared to other factors that were observed, which makes sense since the boundaries are administrative and not based on climate regions directly.
