@@ -45,11 +45,17 @@ labor = Labor_costs(cost_df['Skilled Operator'], cost_df['Operator'], cost_df['F
 cost_df['Annual Labor Costs'] = labor
 
 #Removed labor from FC
-FixedCost = (cost_df.loc[:,"Fixed Operating Costs"] - (cost_df.loc[:,"Annual Operating Labor"] +  cost_df.loc[:,"Maintenance Labor"] + cost_df.loc[:,"Administrative & Support Labor"]))
+FixedCost = (cost_df.loc[:,"Fixed Operating Costs"] -
+ (cost_df.loc[:,"Annual Operating Labor"] +
+  cost_df.loc[:,"Maintenance Labor"] +
+  cost_df.loc[:,"Administrative & Support Labor"]))
 
-LaborCost = (cost_df['Annual Labor Costs'] +  cost_df.loc[:,"Maintenance Labor"] + cost_df.loc[:,"Administrative & Support Labor"])
+LaborCost = (cost_df['Annual Labor Costs'] +
+             cost_df.loc[:,"Maintenance Labor"] +
+             cost_df.loc[:,"Administrative & Support Labor"])
 
-VariableCost = (cost_df.loc[:,"Variable Operating Costs"] + cost_df.loc[:,"Total Fuel Cost"])
+VariableCost = (cost_df.loc[:,"Variable Operating Costs"] +
+                cost_df.loc[:,"Total Fuel Cost"])
 
 inflation_rate = 0.0293 #from 2018 to 2023 from BLS
 names = cost_df.iloc[:,0].astype(str).str[:6]
@@ -63,7 +69,7 @@ for i in range(0, len(cost_df['Name'])):
 
 sim_cost_df = pd.DataFrame()
 
-sim_cost_df = pd.concat([names, FixedCost, LaborCost, VariableCost, cost_df["Elecricity MWh/year"]], axis = 1)
+sim_cost_df = pd.DataFrame([names, FixedCost, LaborCost, VariableCost, cost_df["Elecricity MWh/year"]]).T
 
 sim_cost_df = sim_cost_df.set_axis(["Name", "FC", "LC", "VC", "Elecricity MWh/year"], axis=1)
 
@@ -72,12 +78,15 @@ def include_inflation(var, inflation_rate):
   return new_var
 
 def calculate_cost(r, KC, LC, FC):
-    VC_all = r * KC + LC
+
+    VC_all = (r * KC) + KC + LC
     TC = VC_all + FC
     return TC
 
 TC_cost = calculate_cost(cost_df['Capital Depreciation'], sim_cost_df["VC"], sim_cost_df["LC"], sim_cost_df["FC"])
-TC_cost = include_inflation(TC_cost, 0.0293)
+#TC_cost = include_inflation(TC_cost, 0.0293)
+
+cost_df['Sim TC'] = TC_cost
 
 def iterate_ratios(numerator_df, divisor_df):
   for i in range(0, len(sim_cost_df)):
@@ -139,17 +148,26 @@ def include45Q(captured_emissions, TC, pricepertonne, multiplier):
   for i in range(0, len(new_TC)):
     cell = new_TC[i]
     if cell > 0:
-      profit.append(0)
+      profit.append(cell)
     elif cell < 0:
-      cell = cell*-1
+      #cell = cell*-1
       profit.append(cell)
   return profit
 
-test = include45Q(cost_df['Carbon Capture (tonne/year)'], TC_cost, 17, 5)
+cost_df['TC_17_45Q'] = include45Q(cost_df['Carbon Capture (tonne/year)'], TC_cost, 17, 1)
+cost_df['TC_12_45Q'] = include45Q(cost_df['Carbon Capture (tonne/year)'], TC_cost, 12, 1)
+cost_df['TC_85_45Q'] = include45Q(cost_df['Carbon Capture (tonne/year)'], TC_cost, 17, 5)
+cost_df['TC_60_45Q'] = include45Q(cost_df['Carbon Capture (tonne/year)'], TC_cost, 12, 5)
+
+cost_df.iloc[:,31:35] =  include_inflation(cost_df.iloc[:,31:35], 0.293)
 
 def socialcostcarbon(Total_em, Cap_em, SCC):
   #residual_em = Total_em - Cap_em
   res_cost = SCC * Total_em
   return res_cost
 
-test = socialcostcarbon(cost_df['Carbon Emissions (tonne/year)'], cost_df['Carbon Capture (tonne/year)'], 51)
+cost_df['Residual SCC'] = socialcostcarbon(cost_df['Carbon Emissions (tonne/year)'], cost_df['Carbon Capture (tonne/year)'], 51)
+
+from google.colab.data_table import DataTable
+DataTable.max_columns = 48
+cost_df
